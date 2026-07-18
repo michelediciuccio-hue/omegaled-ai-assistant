@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       instructions: OMEGABOT_SYSTEM_PROMPT,
       input: body.messages.map((message) => ({
         role: message.role,
-        content: [{ type: "input_text" as const, text: message.content }],
+        content: message.content,
       })),
     });
 
@@ -106,7 +106,6 @@ export async function POST(request: Request) {
         status: error.status,
         code: error.code,
         type: error.type,
-        requestId: error.request_id,
       });
 
       if (error.status === 429) {
