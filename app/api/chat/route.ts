@@ -12,6 +12,11 @@ const MAX_MESSAGE_LENGTH = 6000;
 const MAX_TOTAL_CHARACTERS = 36000;
 const REQUEST_TIMEOUT_MS = 45000;
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 const messageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().trim().min(1).max(MAX_MESSAGE_LENGTH),
@@ -46,7 +51,7 @@ function jsonError(message: string, status: number) {
   );
 }
 
-function isSimpleGreeting(messages: Array<{ role: "user" | "assistant"; content: string }>) {
+function isSimpleGreeting(messages: ChatMessage[]) {
   const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
   if (!lastUserMessage) return false;
 
@@ -54,8 +59,11 @@ function isSimpleGreeting(messages: Array<{ role: "user" | "assistant"; content:
 }
 
 export async function POST(request: Request) {
+  let parsedMessages: ChatMessage[] = [];
+
   try {
     const body = requestSchema.parse(await request.json());
+    parsedMessages = body.messages;
 
     if (!process.env.OPENAI_API_KEY) {
       return jsonError("OPENAI_API_KEY non configurata.", 503);
@@ -119,24 +127,18 @@ export async function POST(request: Request) {
       });
 
       if (error.status === 429) {
-        try {
-          const clonedRequest = request.clone();
-          const parsed = requestSchema.safeParse(await clonedRequest.json());
-          if (parsed.success && isSimpleGreeting(parsed.data.messages)) {
-            return NextResponse.json(
-              {
-                message:
-                  "Ciao! Sono OmegaBot, l’assistente tecnico e commerciale OmegaLed. Posso aiutarti con Ledwall, monitor LCD, Digital Signage, configurazioni, assistenza e pre-valutazioni di progetto.",
-                responseId: null,
-                model: "local-fallback",
-                promptVersion: null,
-                promptSource: "fallback",
-              },
-              { headers: { "Cache-Control": "no-store" } },
-            );
-          }
-        } catch {
-          // Continua con il messaggio di servizio standard.
+        if (isSimpleGreeting(parsedMessages)) {
+          return NextResponse.json(
+            {
+              message:
+                "Ciao! Sono OmegaBot, l’assistente tecnico e commerciale OmegaLed. Posso aiutarti con Ledwall, monitor LCD, Digital Signage, configurazioni, assistenza e pre-valutazioni di progetto.",
+              responseId: null,
+              model: "local-fallback",
+              promptVersion: null,
+              promptSource: "fallback",
+            },
+            { headers: { "Cache-Control": "no-store" } },
+          );
         }
 
         return jsonError(
