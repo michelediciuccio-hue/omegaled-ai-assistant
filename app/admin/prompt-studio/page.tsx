@@ -90,10 +90,47 @@ export default function PromptStudioPage() {
 
   useEffect(() => {
     const storedToken = window.sessionStorage.getItem(TOKEN_KEY) ?? "";
-    if (storedToken) {
-      setToken(storedToken);
-      void loadVersions(storedToken);
+    if (!storedToken) return;
+
+    let cancelled = false;
+
+    async function restoreSession() {
+      try {
+        const response = await fetch("/api/admin/prompts", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${storedToken}` },
+          cache: "no-store",
+        });
+        const data = (await response.json()) as {
+          versions?: RemoteVersion[];
+          error?: string;
+        };
+        if (!response.ok) throw new Error(data.error || "Sessione non valida.");
+        if (cancelled) return;
+
+        const remoteVersions = data.versions ?? [];
+        const current = remoteVersions.find((version) => version.status === "published") ?? remoteVersions[0];
+
+        setToken(storedToken);
+        setVersions(remoteVersions);
+        if (current?.blocks?.length) {
+          setBlocks(current.blocks);
+          setSelectedId(current.blocks[0].id);
+        }
+        setStatus(current ? `Versione ${current.version} caricata` : "Nessuna versione remota");
+      } catch (error) {
+        window.sessionStorage.removeItem(TOKEN_KEY);
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : "Sessione non valida");
+        }
+      }
     }
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const selected = useMemo(
@@ -260,18 +297,17 @@ export default function PromptStudioPage() {
       <aside className={styles.sidebar}>
         <div className={styles.brandBlock}><div className={styles.logoMark}>Ω</div><div><strong>OmegaBot</strong><span>Control Center</span></div></div>
         <nav className={styles.navigation}>
-          <p>Workspace</p>
-          <Link href="/admin">⌂ <span>Dashboard</span></Link>
-          <Link href="/admin/prompt-studio" className={styles.active}>✦ <span>Prompt Studio</span></Link>
+          <p>Workspace</p><Link href="/admin">⌂ <span>Dashboard</span></Link><Link href="/admin/prompt-studio" className={styles.active}>✦ <span>Prompt Studio</span></Link>
           <a href="#">▤ <span>Knowledge Base</span></a><a href="#">◇ <span>Prodotti</span></a><a href="#">⌘ <span>Configuratore</span></a><a href="#">◌ <span>Conversazioni</span></a><a href="#">↗ <span>Analytics</span></a><a href="#">◎ <span>Modelli AI</span></a>
+          <p>Sistema</p><a href="#">♙ <span>Utenti e ruoli</span></a><a href="#">≡ <span>Log di sistema</span></a><a href="#">⚙ <span>Impostazioni</span></a>
         </nav>
         <div className={styles.sidebarFooter}><div>MD</div><span><strong>Michele</strong><small>Amministratore</small></span><button onClick={logout}>Esci</button></div>
       </aside>
 
       <section className={styles.workspace}>
         <header className={styles.topbar}>
-          <div><p>OmegaLed AI Platform</p><h1>Prompt Studio</h1><span>Modifica, prova, versiona e pubblica le istruzioni operative.</span></div>
-          <div className={styles.actions}><button onClick={saveDraft} disabled={busy}>Salva bozza</button><button className={styles.publishButton} onClick={publish} disabled={busy || !hasChanges}>Pubblica versione</button></div>
+          <div><p>OmegaLed AI Platform</p><h1>Prompt Studio</h1><span>Modifica, testa e pubblica le istruzioni operative reali di OmegaBot.</span></div>
+          <div className={styles.actions}><button onClick={() => void loadVersions()} disabled={busy}>Aggiorna</button><button onClick={saveDraft} disabled={busy}>Salva bozza</button><button className={styles.publishButton} onClick={publish} disabled={busy || !hasChanges}>Pubblica versione</button></div>
         </header>
 
         <div className={styles.statusBar}><span className={hasChanges ? styles.warningDot : styles.liveDot} /><strong>{status}</strong><small>{published ? `Produzione: versione ${published.version}` : "Nessuna versione pubblicata"}</small><b>{promptLength.toLocaleString("it-IT")} caratteri</b></div>
@@ -284,17 +320,17 @@ export default function PromptStudioPage() {
 
           <article className={styles.editorPanel}>
             <div className={styles.panelHeading}><div><span>Editor</span><h2>{selected.label}</h2></div><small>Backend Supabase</small></div>
-            <div className={styles.editorBody}><label>Descrizione del blocco<input value={selected.description} readOnly /></label><label>Istruzioni<textarea value={selected.content} onChange={(event) => updateSelected(event.target.value)} spellCheck /></label><div className={styles.editorMeta}><span>{selected.content.length} caratteri</span><span>Posizione: {selected.position + 1}</span><span>{selected.enabled ? "Attivo" : "Disattivato"}</span></div></div>
+            <div className={styles.editorBody}><label>Descrizione del blocco<input value={selected.description} readOnly /></label><label>Istruzioni<textarea value={selected.content} onChange={(event) => updateSelected(event.target.value)} spellCheck /></label><div className={styles.editorMeta}><span>{selected.content.length} caratteri</span><span>Priorità: {selected.position + 1}</span><span>Attivo: {selected.enabled ? "sì" : "no"}</span></div></div>
           </article>
 
           <article className={styles.testPanel}>
             <div className={styles.panelHeading}><div><span>Sandbox GPT</span><h2>Test reale</h2></div><small>Non modifica la produzione</small></div>
-            <div className={styles.testBody}><label>Domanda di prova<textarea value={testInput} onChange={(event) => setTestInput(event.target.value)} /></label><button onClick={runTest} disabled={busy || !testInput.trim()}>Esegui test GPT</button><pre>{testResult || "La risposta reale del modello apparirà qui."}</pre></div>
+            <div className={styles.testBody}><label>Domanda di prova<textarea value={testInput} onChange={(event) => setTestInput(event.target.value)} /></label><button onClick={runTest} disabled={busy || !testInput.trim()}>Esegui test GPT</button><pre>{testResult || "La risposta del modello con la bozza corrente apparirà qui."}</pre></div>
           </article>
 
           <article className={styles.historyPanel}>
-            <div className={styles.panelHeading}><div><span>Versionamento remoto</span><h2>Cronologia pubblicazioni</h2></div><small>{versions.length} versioni</small></div>
-            <div className={styles.historyList}>{versions.length === 0 && <p>Nessuna versione presente su Supabase.</p>}{versions.map((version) => <div key={version.id}><span><strong>Versione {version.version} · {version.status}</strong><small>{new Date(version.created_at).toLocaleString("it-IT")} · {version.note || "Senza nota"}</small></span><button onClick={() => rollback(version)} disabled={busy}>Ripristina in bozza</button></div>)}</div>
+            <div className={styles.panelHeading}><div><span>Versionamento remoto</span><h2>Cronologia Supabase</h2></div><small>Ultime 30</small></div>
+            <div className={styles.historyList}>{versions.length === 0 && <p>Nessuna versione trovata.</p>}{versions.map((version) => <div key={version.id}><span><strong>Versione {version.version} · {version.status}</strong><small>{new Date(version.created_at).toLocaleString("it-IT")} · {version.note || "Nessuna nota"}</small></span><button onClick={() => rollback(version)} disabled={busy}>Ripristina come bozza</button></div>)}</div>
           </article>
         </section>
       </section>
