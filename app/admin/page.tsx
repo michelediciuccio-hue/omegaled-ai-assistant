@@ -39,6 +39,12 @@ const services = [
   { name: "OmegaGest API", status: "Non collegata", latency: "—" },
 ];
 
+function getNavigationHref(label: string) {
+  if (label === "Dashboard") return "/admin";
+  if (label === "Prompt Studio") return "/admin/prompt-studio";
+  return "#";
+}
+
 export default function AdminDashboardPage() {
   return (
     <main className={styles.shell}>
@@ -56,7 +62,7 @@ export default function AdminDashboardPage() {
           {navigation.map(([label, icon, active]) => (
             <Link
               key={label as string}
-              href={label === "Dashboard" ? "/admin" : "#"}
+              href={getNavigationHref(label as string)}
               className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
             >
               <span>{icon}</span>
@@ -94,7 +100,7 @@ export default function AdminDashboardPage() {
             <button className={styles.iconButton} aria-label="Cerca">⌕</button>
             <button className={styles.iconButton} aria-label="Notifiche">♢</button>
             <Link href="/" className={styles.secondaryButton}>Apri OmegaBot ↗</Link>
-            <button className={styles.primaryButton}>+ Nuova conoscenza</button>
+            <Link href="/admin/prompt-studio" className={styles.primaryButton}>Apri Prompt Studio</Link>
           </div>
         </header>
 
