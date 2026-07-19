@@ -1,0 +1,17 @@
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  background:
+    radial-gradient(circle at 78% 8%, rgba(9, 140, 148, 0.12), transparent 32%),
+    #071012;
+  color: #f5f7f7;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 
