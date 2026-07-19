@@ -1,0 +1,2 @@
+sku,audience,price_type,currency,amount,vat_included,min_quantity,max_quantity,valid_from,valid_until,includes,excludes,note,active
+EXAMPLE-SKU,public,unit,EUR,1000.00,false,1,,2026-07-20,,"dispositivo|dotazione standard","spedizione|installazione|struttura|opere elettriche",Prezzo indicativo soggetto a verifica,true

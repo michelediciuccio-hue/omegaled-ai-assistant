@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { OMEGABOT_SYSTEM_PROMPT } from "@/lib/omegabot/system-prompt";
+import { getPublishedSystemPrompt } from "@/lib/omegabot/prompt-repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +11,11 @@ const MAX_MESSAGES = 24;
 const MAX_MESSAGE_LENGTH = 6000;
 const MAX_TOTAL_CHARACTERS = 36000;
 const REQUEST_TIMEOUT_MS = 45000;
+
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
 
 const messageSchema = z.object({
   role: z.enum(["user", "assistant"]),
@@ -46,9 +51,19 @@ function jsonError(message: string, status: number) {
   );
 }
 
+function isSimpleGreeting(messages: ChatMessage[]) {
+  const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
+  if (!lastUserMessage) return false;
+
+  return /^(ciao|salve|buongiorno|buonasera|hey|hello)[!,.\s]*$/i.test(lastUserMessage.content);
+}
+
 export async function POST(request: Request) {
+  let parsedMessages: ChatMessage[] = [];
+
   try {
     const body = requestSchema.parse(await request.json());
+    parsedMessages = body.messages;
 
     if (!process.env.OPENAI_API_KEY) {
       return jsonError("OPENAI_API_KEY non configurata.", 503);
@@ -61,10 +76,11 @@ export async function POST(request: Request) {
     });
 
     const model = process.env.OPENAI_MODEL || "gpt-5-mini";
+    const activePrompt = await getPublishedSystemPrompt();
 
     const response = await client.responses.create({
       model,
-      instructions: OMEGABOT_SYSTEM_PROMPT,
+      instructions: activePrompt.prompt,
       input: body.messages.map((message) => ({
         role: message.role,
         content: message.content,
@@ -82,6 +98,8 @@ export async function POST(request: Request) {
         message: text,
         responseId: response.id,
         model,
+        promptVersion: activePrompt.version,
+        promptSource: activePrompt.source,
       },
       {
         headers: { "Cache-Control": "no-store" },
@@ -109,6 +127,20 @@ export async function POST(request: Request) {
       });
 
       if (error.status === 429) {
+        if (isSimpleGreeting(parsedMessages)) {
+          return NextResponse.json(
+            {
+              message:
+                "Ciao! Sono OmegaBot, l’assistente tecnico e commerciale OmegaLed. Posso aiutarti con Ledwall, monitor LCD, Digital Signage, configurazioni, assistenza e pre-valutazioni di progetto.",
+              responseId: null,
+              model: "local-fallback",
+              promptVersion: null,
+              promptSource: "fallback",
+            },
+            { headers: { "Cache-Control": "no-store" } },
+          );
+        }
+
         return jsonError(
           "Il servizio è temporaneamente sovraccarico. Riprova tra poco oppure contatta l’assistenza OmegaLed.",
           429,
