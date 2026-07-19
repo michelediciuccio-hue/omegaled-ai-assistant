@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { OMEGABOT_SYSTEM_PROMPT } from "@/lib/omegabot/system-prompt";
+import { getPublishedSystemPrompt } from "@/lib/omegabot/prompt-repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +46,13 @@ function jsonError(message: string, status: number) {
   );
 }
 
+function isSimpleGreeting(messages: Array<{ role: "user" | "assistant"; content: string }>) {
+  const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
+  if (!lastUserMessage) return false;
+
+  return /^(ciao|salve|buongiorno|buonasera|hey|hello)[!,.\s]*$/i.test(lastUserMessage.content);
+}
+
 export async function POST(request: Request) {
   try {
     const body = requestSchema.parse(await request.json());
@@ -61,10 +68,11 @@ export async function POST(request: Request) {
     });
 
     const model = process.env.OPENAI_MODEL || "gpt-5-mini";
+    const activePrompt = await getPublishedSystemPrompt();
 
     const response = await client.responses.create({
       model,
-      instructions: OMEGABOT_SYSTEM_PROMPT,
+      instructions: activePrompt.prompt,
       input: body.messages.map((message) => ({
         role: message.role,
         content: message.content,
@@ -82,6 +90,8 @@ export async function POST(request: Request) {
         message: text,
         responseId: response.id,
         model,
+        promptVersion: activePrompt.version,
+        promptSource: activePrompt.source,
       },
       {
         headers: { "Cache-Control": "no-store" },
@@ -109,6 +119,26 @@ export async function POST(request: Request) {
       });
 
       if (error.status === 429) {
+        try {
+          const clonedRequest = request.clone();
+          const parsed = requestSchema.safeParse(await clonedRequest.json());
+          if (parsed.success && isSimpleGreeting(parsed.data.messages)) {
+            return NextResponse.json(
+              {
+                message:
+                  "Ciao! Sono OmegaBot, l’assistente tecnico e commerciale OmegaLed. Posso aiutarti con Ledwall, monitor LCD, Digital Signage, configurazioni, assistenza e pre-valutazioni di progetto.",
+                responseId: null,
+                model: "local-fallback",
+                promptVersion: null,
+                promptSource: "fallback",
+              },
+              { headers: { "Cache-Control": "no-store" } },
+            );
+          }
+        } catch {
+          // Continua con il messaggio di servizio standard.
+        }
+
         return jsonError(
           "Il servizio è temporaneamente sovraccarico. Riprova tra poco oppure contatta l’assistenza OmegaLed.",
           429,
