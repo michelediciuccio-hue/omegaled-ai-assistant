@@ -42,6 +42,7 @@ const services = [
 function getNavigationHref(label: string) {
   if (label === "Dashboard") return "/admin";
   if (label === "Prompt Studio") return "/admin/prompt-studio";
+  if (label === "Prodotti") return "/admin/catalog-import";
   return "#";
 }
 
