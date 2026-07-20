@@ -60,7 +60,7 @@ function getLocalFallback(messages: ChatMessage[]) {
   }
 
   if (input.includes("passo pixel") && input.includes("vetrin")) {
-    return "Per una vetrina la scelta più frequente è P2.9, adatto a una buona visione già da circa 3 metri. Se il pubblico osserva lo schermo più da vicino o il display è piccolo, conviene valutare P2 o P2.6. Per indicarti il passo corretto mi serve soprattutto la distanza minima di visione.";
+    return "Per una vetrina OmegaLed non propone P2 o P2.6. La valutazione parte normalmente da P2.9 oppure P3.9, in base a distanza di visione, dimensioni dello schermo, luminosità richiesta ed esposizione alla luce. Indicami distanza minima di visione e misure disponibili, così restringiamo la scelta corretta.";
   }
 
   if ((input.includes("configur") || input.includes("preventiv")) && input.includes("outdoor")) {
