@@ -44,18 +44,53 @@ const requestSchema = z
 function jsonError(message: string, status: number) {
   return NextResponse.json(
     { error: message },
-    {
-      status,
-      headers: { "Cache-Control": "no-store" },
-    },
+    { status, headers: { "Cache-Control": "no-store" } },
   );
 }
 
-function isSimpleGreeting(messages: ChatMessage[]) {
-  const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
-  if (!lastUserMessage) return false;
+function getLastUserMessage(messages: ChatMessage[]) {
+  return [...messages].reverse().find((message) => message.role === "user")?.content.trim() ?? "";
+}
 
-  return /^(ciao|salve|buongiorno|buonasera|hey|hello)[!,.\s]*$/i.test(lastUserMessage.content);
+function getLocalFallback(messages: ChatMessage[]) {
+  const input = getLastUserMessage(messages).toLocaleLowerCase("it");
+
+  if (/^(ciao|salve|buongiorno|buonasera|hey|hello)[!,.?\s]*$/i.test(input)) {
+    return "Ciao! Sono OmegaBot, l’assistente tecnico e commerciale OmegaLed. Posso aiutarti con Ledwall, monitor LCD, Digital Signage, configurazioni, assistenza e pre-valutazioni di progetto.";
+  }
+
+  if (input.includes("passo pixel") && input.includes("vetrin")) {
+    return "Per una vetrina la scelta più frequente è P2.9, adatto a una buona visione già da circa 3 metri. Se il pubblico osserva lo schermo più da vicino o il display è piccolo, conviene valutare P2 o P2.6. Per indicarti il passo corretto mi serve soprattutto la distanza minima di visione.";
+  }
+
+  if ((input.includes("configur") || input.includes("preventiv")) && input.includes("outdoor")) {
+    return "Per configurare un Ledwall outdoor servono quattro dati iniziali: larghezza e altezza, distanza di visione, tipo di installazione e posizione geografica. In genere si parte da P3.9 con luminosità almeno 5.000–5.500 Nits e protezione IP65. Indicami le dimensioni previste e se sarà installato a parete, su struttura o autoportante.";
+  }
+
+  if (input.includes("monitor lcd") && (input.includes("assist") || input.includes("problema"))) {
+    return "Per iniziare la diagnosi del monitor LCD indicami modello, tipo di problema, eventuale messaggio di errore e se il dispositivo si accende. Se possibile prepara anche una foto dello schermo e dell’etichetta tecnica.";
+  }
+
+  if (input.includes("pre-valutazione") || input.includes("progetto")) {
+    return "Per una pre-valutazione servono: prodotto desiderato, misure indicative, luogo di installazione, utilizzo indoor o outdoor e città. Con questi dati OmegaLed può impostare una prima configurazione tecnica e commerciale.";
+  }
+
+  return "La connessione al motore AI è momentaneamente limitata, ma posso comunque raccogliere i dati del progetto. Scrivi prodotto, misure, utilizzo indoor o outdoor, città e distanza di visione. La richiesta potrà poi essere completata da un consulente OmegaLed.";
+}
+
+function fallbackResponse(messages: ChatMessage[], reason: string) {
+  return NextResponse.json(
+    {
+      message: getLocalFallback(messages),
+      responseId: null,
+      model: "local-fallback",
+      promptVersion: null,
+      promptSource: "fallback",
+      degraded: true,
+      degradedReason: reason,
+    },
+    { headers: { "Cache-Control": "no-store", "X-OmegaBot-Mode": "fallback" } },
+  );
 }
 
 export async function POST(request: Request) {
@@ -66,7 +101,8 @@ export async function POST(request: Request) {
     parsedMessages = body.messages;
 
     if (!process.env.OPENAI_API_KEY) {
-      return jsonError("OPENAI_API_KEY non configurata.", 503);
+      console.error("OmegaBot configuration error", { code: "missing_openai_api_key" });
+      return fallbackResponse(parsedMessages, "missing_api_key");
     }
 
     const client = new OpenAI({
@@ -88,10 +124,7 @@ export async function POST(request: Request) {
     });
 
     const text = response.output_text?.trim();
-
-    if (!text) {
-      return jsonError("OmegaBot non ha prodotto una risposta valida.", 502);
-    }
+    if (!text) return fallbackResponse(parsedMessages, "empty_response");
 
     return NextResponse.json(
       {
@@ -100,22 +133,15 @@ export async function POST(request: Request) {
         model,
         promptVersion: activePrompt.version,
         promptSource: activePrompt.source,
+        degraded: false,
       },
-      {
-        headers: { "Cache-Control": "no-store" },
-      },
+      { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        {
-          error: "Richiesta non valida.",
-          details: error.flatten(),
-        },
-        {
-          status: 400,
-          headers: { "Cache-Control": "no-store" },
-        },
+        { error: "Richiesta non valida.", details: error.flatten() },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
       );
     }
 
@@ -124,27 +150,17 @@ export async function POST(request: Request) {
         status: error.status,
         code: error.code,
         type: error.type,
+        requestId: error.request_id,
+        message: error.message,
       });
 
       if (error.status === 429) {
-        if (isSimpleGreeting(parsedMessages)) {
-          return NextResponse.json(
-            {
-              message:
-                "Ciao! Sono OmegaBot, l’assistente tecnico e commerciale OmegaLed. Posso aiutarti con Ledwall, monitor LCD, Digital Signage, configurazioni, assistenza e pre-valutazioni di progetto.",
-              responseId: null,
-              model: "local-fallback",
-              promptVersion: null,
-              promptSource: "fallback",
-            },
-            { headers: { "Cache-Control": "no-store" } },
-          );
-        }
+        const reason = error.code === "insufficient_quota" ? "insufficient_quota" : "rate_limit";
+        return fallbackResponse(parsedMessages, reason);
+      }
 
-        return jsonError(
-          "Il servizio è temporaneamente sovraccarico. Riprova tra poco oppure contatta l’assistenza OmegaLed.",
-          429,
-        );
+      if (error.status && error.status >= 500) {
+        return fallbackResponse(parsedMessages, "openai_unavailable");
       }
     } else {
       console.error("OmegaBot API error", error);
