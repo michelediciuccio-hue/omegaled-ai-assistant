@@ -67,6 +67,7 @@ export default function CatalogImportPage() {
           <p>Workspace</p>
           <Link href="/admin">⌂ <span>Dashboard</span></Link>
           <Link href="/admin/prompt-studio">✦ <span>Prompt Studio</span></Link>
+          <Link href="/admin/catalog-manager">✎ <span>Gestione catalogo</span></Link>
           <Link href="/admin/catalog-import" className={styles.active}>◇ <span>Catalogo & Import</span></Link>
         </nav>
       </aside>
@@ -74,7 +75,7 @@ export default function CatalogImportPage() {
       <section className={styles.workspace}>
         <header className={styles.header}>
           <div><p>OmegaLed Data Control</p><h1>Catalogo & Import</h1><span>Valida prodotti e listini prima di scriverli nel database.</span></div>
-          <Link href="/admin" className={styles.back}>Torna alla Dashboard</Link>
+          <div style={{display:"flex",gap:10}}><Link href="/admin/catalog-manager" className={styles.back}>Gestisci manualmente</Link><Link href="/admin" className={styles.back}>Torna alla Dashboard</Link></div>
         </header>
 
         <div className={styles.status}><span /> <strong>{status}</strong></div>
