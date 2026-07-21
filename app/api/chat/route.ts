@@ -132,7 +132,6 @@ export async function POST(request: Request) {
         status: error.status,
         code: error.code,
         type: error.type,
-        requestId: error.request_id,
         message: error.message,
       });
 
