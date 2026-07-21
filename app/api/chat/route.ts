@@ -41,13 +41,6 @@ const requestSchema = z
     }
   });
 
-function jsonError(message: string, status: number) {
-  return NextResponse.json(
-    { error: message },
-    { status, headers: { "Cache-Control": "no-store" } },
-  );
-}
-
 function getLastUserMessage(messages: ChatMessage[]) {
   return [...messages].reverse().find((message) => message.role === "user")?.content.trim() ?? "";
 }
@@ -56,10 +49,10 @@ function getFallbackMessage(messages: ChatMessage[]) {
   const input = getLastUserMessage(messages);
 
   if (/^(ciao|salve|buongiorno|buonasera|hey|hello)[!,.?\s]*$/i.test(input)) {
-    return "Ciao, sono OmegaBot. In questo momento il collegamento al motore AI è limitato, ma posso comunque raccogliere la tua richiesta e prepararla per un consulente OmegaLed.";
+    return "Ciao, sono OmegaBot. In questo momento il collegamento al motore AI è limitato, ma posso comunque raccogliere la tua richiesta e prepararla per il personale OmegaLed più adatto.";
   }
 
-  return "Ho ricevuto la tua richiesta. In questo momento il collegamento al motore AI è limitato, quindi non ti darò una risposta tecnica improvvisata. Scrivi prodotto o esigenza, misure indicative, utilizzo indoor, outdoor o vetrina e città: preparo i dati per la gestione successiva da parte di OmegaLed.";
+  return "Ho ricevuto la tua richiesta. In questo momento il collegamento al motore AI è limitato, quindi non ti darò una risposta tecnica improvvisata. Scrivi prodotto o esigenza, misure indicative, utilizzo indoor, outdoor o vetrina e città: preparo i dati per indirizzare la richiesta al personale OmegaLed più adatto.";
 }
 
 function fallbackResponse(messages: ChatMessage[], reason: string) {
