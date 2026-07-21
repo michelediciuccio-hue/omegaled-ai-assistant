@@ -41,21 +41,38 @@ const requestSchema = z
     }
   });
 
-function jsonError(message: string, status: number) {
-  return NextResponse.json(
-    { error: message },
-    {
-      status,
-      headers: { "Cache-Control": "no-store" },
-    },
-  );
+function getLastUserMessage(messages: ChatMessage[]) {
+  return [...messages].reverse().find((message) => message.role === "user")?.content.trim() ?? "";
 }
 
-function isSimpleGreeting(messages: ChatMessage[]) {
-  const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
-  if (!lastUserMessage) return false;
+function getFallbackMessage(messages: ChatMessage[]) {
+  const input = getLastUserMessage(messages);
 
-  return /^(ciao|salve|buongiorno|buonasera|hey|hello)[!,.\s]*$/i.test(lastUserMessage.content);
+  if (/^(ciao|salve|buongiorno|buonasera|hey|hello)[!,.?\s]*$/i.test(input)) {
+    return "Ciao, sono OmegaBot. In questo momento il collegamento al motore AI è limitato, ma posso comunque raccogliere la tua richiesta e prepararla per il personale OmegaLed più adatto.";
+  }
+
+  return "Ho ricevuto la tua richiesta. In questo momento il collegamento al motore AI è limitato, quindi non ti darò una risposta tecnica improvvisata. Scrivi prodotto o esigenza, misure indicative, utilizzo indoor, outdoor o vetrina e città: preparo i dati per indirizzare la richiesta al personale OmegaLed più adatto.";
+}
+
+function fallbackResponse(messages: ChatMessage[], reason: string) {
+  return NextResponse.json(
+    {
+      message: getFallbackMessage(messages),
+      responseId: null,
+      model: "local-fallback",
+      promptVersion: null,
+      promptSource: "fallback",
+      degraded: true,
+      degradedReason: reason,
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store",
+        "X-OmegaBot-Mode": "fallback",
+      },
+    },
+  );
 }
 
 export async function POST(request: Request) {
@@ -66,7 +83,8 @@ export async function POST(request: Request) {
     parsedMessages = body.messages;
 
     if (!process.env.OPENAI_API_KEY) {
-      return jsonError("OPENAI_API_KEY non configurata.", 503);
+      console.error("OmegaBot configuration error", { code: "missing_openai_api_key" });
+      return fallbackResponse(parsedMessages, "missing_api_key");
     }
 
     const client = new OpenAI({
@@ -88,10 +106,7 @@ export async function POST(request: Request) {
     });
 
     const text = response.output_text?.trim();
-
-    if (!text) {
-      return jsonError("OmegaBot non ha prodotto una risposta valida.", 502);
-    }
+    if (!text) return fallbackResponse(parsedMessages, "empty_response");
 
     return NextResponse.json(
       {
@@ -100,22 +115,15 @@ export async function POST(request: Request) {
         model,
         promptVersion: activePrompt.version,
         promptSource: activePrompt.source,
+        degraded: false,
       },
-      {
-        headers: { "Cache-Control": "no-store" },
-      },
+      { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        {
-          error: "Richiesta non valida.",
-          details: error.flatten(),
-        },
-        {
-          status: 400,
-          headers: { "Cache-Control": "no-store" },
-        },
+        { error: "Richiesta non valida.", details: error.flatten() },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
       );
     }
 
@@ -124,35 +132,21 @@ export async function POST(request: Request) {
         status: error.status,
         code: error.code,
         type: error.type,
+        message: error.message,
       });
 
       if (error.status === 429) {
-        if (isSimpleGreeting(parsedMessages)) {
-          return NextResponse.json(
-            {
-              message:
-                "Ciao! Sono OmegaBot, l’assistente tecnico e commerciale OmegaLed. Posso aiutarti con Ledwall, monitor LCD, Digital Signage, configurazioni, assistenza e pre-valutazioni di progetto.",
-              responseId: null,
-              model: "local-fallback",
-              promptVersion: null,
-              promptSource: "fallback",
-            },
-            { headers: { "Cache-Control": "no-store" } },
-          );
-        }
+        const reason = error.code === "insufficient_quota" ? "insufficient_quota" : "rate_limit";
+        return fallbackResponse(parsedMessages, reason);
+      }
 
-        return jsonError(
-          "Il servizio è temporaneamente sovraccarico. Riprova tra poco oppure contatta l’assistenza OmegaLed.",
-          429,
-        );
+      if (error.status && error.status >= 500) {
+        return fallbackResponse(parsedMessages, "openai_unavailable");
       }
     } else {
       console.error("OmegaBot API error", error);
     }
 
-    return jsonError(
-      "Il servizio AI non è momentaneamente disponibile. Contatta l’assistenza OmegaLed.",
-      500,
-    );
+    return fallbackResponse(parsedMessages, "unexpected_error");
   }
 }
