@@ -18,6 +18,9 @@ type Settings = {
   enabled: boolean;
 };
 
+type SettingsListResponse = { settings: Settings[] };
+type SettingsUpdateResponse = { settings: Settings };
+
 const TOKEN_KEY = "omegabot_admin_access_token";
 
 export default function ConciergeControlPage() {
@@ -26,14 +29,14 @@ export default function ConciergeControlPage() {
   const [status, setStatus] = useState("Caricamento impostazioni…");
   const [busy, setBusy] = useState(false);
 
-  const request = useCallback(async (init?: RequestInit) => {
+  const request = useCallback(async <T,>(init?: RequestInit): Promise<T> => {
     const token = window.sessionStorage.getItem(TOKEN_KEY);
     if (!token) throw new Error("Accedi prima dal Prompt Studio.");
     const response = await fetch("/api/admin/concierge-settings", {
       ...init,
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init?.headers || {}) },
     });
-    const data = await response.json();
+    const data = (await response.json()) as T & { error?: string };
     if (!response.ok) throw new Error(data.error || "Operazione non riuscita.");
     return data;
   }, []);
@@ -41,8 +44,10 @@ export default function ConciergeControlPage() {
   const load = useCallback(async () => {
     try {
       setBusy(true);
-      const data = await request();
-      const mapped = Object.fromEntries(data.settings.map((item: Settings) => [item.channel, item])) as Record<Channel, Settings>;
+      const data = await request<SettingsListResponse>();
+      const mapped = Object.fromEntries(
+        data.settings.map((item) => [item.channel, item]),
+      ) as Record<Channel, Settings>;
       setItems(mapped);
       setStatus("Impostazioni caricate.");
     } catch (error) {
@@ -58,16 +63,25 @@ export default function ConciergeControlPage() {
   const current = items[channel];
 
   function update<K extends keyof Settings>(key: K, value: Settings[K]) {
-    setItems({ ...items, [channel]: { ...current, [key]: value } });
+    setItems((previous) => {
+      if (!previous) return previous;
+      return {
+        ...previous,
+        [channel]: { ...previous[channel], [key]: value },
+      };
+    });
   }
 
-  async function save(event: FormEvent) {
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
       setBusy(true);
       setStatus("Salvataggio in corso…");
-      const data = await request({ method: "PUT", body: JSON.stringify(current) });
-      setItems({ ...items, [channel]: data.settings });
+      const data = await request<SettingsUpdateResponse>({
+        method: "PUT",
+        body: JSON.stringify(current),
+      });
+      setItems((previous) => previous ? { ...previous, [channel]: data.settings } : previous);
       setStatus("Impostazioni salvate correttamente.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Salvataggio non riuscito.");
@@ -93,8 +107,8 @@ export default function ConciergeControlPage() {
         </header>
 
         <div className={styles.channelTabs}>
-          <button className={channel === "website" ? styles.selected : ""} onClick={() => setChannel("website")}>Sito</button>
-          <button className={channel === "whatsapp" ? styles.selected : ""} onClick={() => setChannel("whatsapp")}>WhatsApp Business</button>
+          <button type="button" className={channel === "website" ? styles.selected : ""} onClick={() => setChannel("website")}>Sito</button>
+          <button type="button" className={channel === "whatsapp" ? styles.selected : ""} onClick={() => setChannel("whatsapp")}>WhatsApp Business</button>
         </div>
 
         <div className={styles.status}>{status}</div>
@@ -118,8 +132,8 @@ export default function ConciergeControlPage() {
             <h2>{current.headline}</h2>
             <p>{current.subheadline}</p>
             <div className={styles.message}>{current.welcome_message}</div>
-            <div className={styles.actions}>{current.quick_actions.map((item) => <button key={item}>{item}</button>)}</div>
-            <div className={styles.composer}><span>{current.input_placeholder}</span><button>{current.submit_label}</button></div>
+            <div className={styles.actions}>{current.quick_actions.map((item) => <button type="button" key={item}>{item}</button>)}</div>
+            <div className={styles.composer}><span>{current.input_placeholder}</span><button type="button">{current.submit_label}</button></div>
             <small>{current.enabled ? "Canale attivo" : "Canale disattivato"}</small>
           </article>
         </section>
