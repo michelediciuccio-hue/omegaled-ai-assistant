@@ -7,20 +7,23 @@ type ChatMessage = {
   content: string;
 };
 
-const starterPrompts = [
-  "Quale passo pixel mi consigli per una vetrina?",
-  "Aiutami a configurare un Ledwall outdoor",
-  "Ho bisogno di assistenza su un monitor LCD",
-  "Vorrei una pre-valutazione per un progetto",
-];
+type OmegaChatProps = {
+  displayName: string;
+  welcomeMessage: string;
+  inputPlaceholder: string;
+  submitLabel: string;
+  starterPrompts: string[];
+};
 
-export function OmegaChat() {
+export function OmegaChat({
+  displayName,
+  welcomeMessage,
+  inputPlaceholder,
+  submitLabel,
+  starterPrompts,
+}: OmegaChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      content:
-        "Ciao, sono OmegaBot. Posso aiutarti con Ledwall, display Led, monitor LCD, Digital Signage, configurazioni, assistenza e pre-valutazioni di progetto. Posso anche metterti in contatto con un consulente o con l’assistenza OmegaLed.",
-    },
+    { role: "assistant", content: welcomeMessage },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -71,12 +74,12 @@ export function OmegaChat() {
   }
 
   return (
-    <section className="chat-shell" aria-label="Chat con OmegaBot">
+    <section className="chat-shell" aria-label={`Chat con ${displayName}`}>
       <header className="chat-header">
         <div className="avatar" aria-hidden="true">Ω</div>
         <div>
-          <strong>OmegaBot</strong>
-          <span>Assistente AI OmegaLed</span>
+          <strong>{displayName}</strong>
+          <span>Concierge digitale OmegaLed</span>
         </div>
         <span className="status">Online</span>
       </header>
@@ -102,11 +105,11 @@ export function OmegaChat() {
         <textarea
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="Scrivi la tua domanda tecnica o commerciale…"
+          placeholder={inputPlaceholder}
           rows={3}
           maxLength={8000}
         />
-        <button type="submit" disabled={!canSend}>Invia</button>
+        <button type="submit" disabled={!canSend}>{submitLabel}</button>
       </form>
 
       <footer className="support-bar">
