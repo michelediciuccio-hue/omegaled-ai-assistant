@@ -24,42 +24,127 @@ type SettingsUpdateResponse = { settings: Settings };
 const TOKEN_KEY = "omegabot_admin_access_token";
 
 export default function ConciergeControlPage() {
+  const [token, setToken] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [items, setItems] = useState<Record<Channel, Settings> | null>(null);
   const [channel, setChannel] = useState<Channel>("website");
-  const [status, setStatus] = useState("Caricamento impostazioni…");
+  const [status, setStatus] = useState("Accesso richiesto");
   const [busy, setBusy] = useState(false);
 
-  const request = useCallback(async <T,>(init?: RequestInit): Promise<T> => {
-    const token = window.sessionStorage.getItem(TOKEN_KEY);
-    if (!token) throw new Error("Accedi prima dal Prompt Studio.");
+  const request = useCallback(async <T,>(accessToken: string, init?: RequestInit): Promise<T> => {
     const response = await fetch("/api/admin/concierge-settings", {
       ...init,
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init?.headers || {}) },
+      cache: "no-store",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
     });
     const data = (await response.json()) as T & { error?: string };
     if (!response.ok) throw new Error(data.error || "Operazione non riuscita.");
     return data;
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (accessToken: string) => {
     try {
       setBusy(true);
-      const data = await request<SettingsListResponse>();
+      const data = await request<SettingsListResponse>(accessToken);
       const mapped = Object.fromEntries(
         data.settings.map((item) => [item.channel, item]),
       ) as Record<Channel, Settings>;
       setItems(mapped);
       setStatus("Impostazioni caricate.");
     } catch (error) {
+      window.sessionStorage.removeItem(TOKEN_KEY);
+      setToken("");
+      setItems(null);
       setStatus(error instanceof Error ? error.message : "Errore di caricamento.");
     } finally {
       setBusy(false);
     }
   }, [request]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const storedToken = window.sessionStorage.getItem(TOKEN_KEY) ?? "";
+    if (!storedToken) return;
+    setToken(storedToken);
+    void load(storedToken);
+  }, [load]);
 
-  if (!items) return <main className={styles.loading}>{status}</main>;
+  async function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !anonKey) {
+      setStatus("Variabili Supabase pubbliche non configurate.");
+      return;
+    }
+
+    try {
+      setBusy(true);
+      setStatus("Accesso in corso…");
+      const response = await fetch(`${url}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers: { apikey: anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = (await response.json()) as {
+        access_token?: string;
+        error_description?: string;
+      };
+      if (!response.ok || !data.access_token) {
+        throw new Error(data.error_description || "Credenziali non valide.");
+      }
+
+      window.sessionStorage.setItem(TOKEN_KEY, data.access_token);
+      setToken(data.access_token);
+      setPassword("");
+      await load(data.access_token);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Accesso non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function logout() {
+    window.sessionStorage.removeItem(TOKEN_KEY);
+    setToken("");
+    setItems(null);
+    setStatus("Sessione terminata.");
+  }
+
+  if (!token || !items) {
+    return (
+      <main className={styles.loginShell}>
+        <section className={styles.loginCard}>
+          <div className={styles.loginBrand}>Ω</div>
+          <p>OmegaBot Control Center</p>
+          <h1>Concierge Control</h1>
+          <span>Accedi direttamente per modificare i testi del sito e di WhatsApp Business.</span>
+          <form onSubmit={login}>
+            <label>
+              Email amministratore
+              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
+            </label>
+            <label>
+              Password
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+            </label>
+            <button type="submit" disabled={busy || !email || !password}>Accedi</button>
+          </form>
+          <small>{status}</small>
+          <div className={styles.loginLinks}>
+            <Link href="/">Apri frontend OmegaBot ↗</Link>
+            <Link href="/admin">Torna alla Dashboard</Link>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   const current = items[channel];
 
   function update<K extends keyof Settings>(key: K, value: Settings[K]) {
@@ -77,7 +162,7 @@ export default function ConciergeControlPage() {
     try {
       setBusy(true);
       setStatus("Salvataggio in corso…");
-      const data = await request<SettingsUpdateResponse>({
+      const data = await request<SettingsUpdateResponse>(token, {
         method: "PUT",
         body: JSON.stringify(current),
       });
@@ -98,12 +183,17 @@ export default function ConciergeControlPage() {
         <Link href="/admin/concierge-control" className={styles.active}>◇ Concierge Control</Link>
         <Link href="/admin/knowledge-base">▤ Knowledge Base</Link>
         <Link href="/admin/catalog-import">▦ Catalogo</Link>
+        <Link href="/">↗ Apri frontend</Link>
+        <button type="button" className={styles.logoutButton} onClick={logout}>Esci</button>
       </aside>
 
       <section className={styles.workspace}>
         <header>
           <div><p>OmegaLed Channel Content</p><h1>Concierge Control</h1><span>Modifica testi, pulsanti e messaggi per sito e WhatsApp senza intervenire sul codice.</span></div>
-          <Link href="/admin">Torna alla Dashboard</Link>
+          <div className={styles.headerActions}>
+            <Link href="/" target="_blank">Apri frontend ↗</Link>
+            <Link href="/admin">Dashboard</Link>
+          </div>
         </header>
 
         <div className={styles.channelTabs}>
